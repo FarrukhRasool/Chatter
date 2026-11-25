@@ -48,6 +48,11 @@ final class ChatStore: ObservableObject {
         conversations[index].messages[messageIndex].status = status
     }
 
+    func deleteMessage(_ messageID: UUID, in conversationID: UUID) {
+        guard let index = indexOfConversation(conversationID) else { return }
+        conversations[index].messages.removeAll { $0.id == messageID }
+    }
+
     /// Marks every delivered outgoing message as read by the other participant.
     func markOutgoingAsRead(in conversationID: UUID) {
         guard let index = indexOfConversation(conversationID) else { return }

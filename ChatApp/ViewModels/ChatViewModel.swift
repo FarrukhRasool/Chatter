@@ -24,7 +24,7 @@ final class ChatViewModel: ObservableObject {
         service.events
             .filter { $0.conversationID == conversationID }
             .receive(on: DispatchQueue.main)
-            .sink(receiveValue: handle)
+            .sink{ [weak self] in self?.handle($0) }
             .store(in: &cancellables)
     }
 
@@ -85,15 +85,43 @@ final class ChatViewModel: ObservableObject {
 
         let conversationID = self.conversationID
         let messageID = message.id
-        service.send(message, to: recipient) { [weak self] result in
-            guard let self else {   return  }
+        service.send(message, to: recipient) { [store] result in
             switch result {
             case .success:
-                 self.store.updateStatus(.sent, messageID: messageID, in: conversationID)
+                 store.updateStatus(.sent, messageID: messageID, in: conversationID)
             case .failure:
-                 self.store.updateStatus(.failed, messageID: messageID, in: conversationID)
+                 store.updateStatus(.failed, messageID: messageID, in: conversationID)
             }
         }
+    }
+
+    /// Resends a failed message in place, keeping its ID, position and time.
+    func retry(messageID: UUID) {
+        guard var message = failedMessage(withID: messageID),
+              let recipient = conversation?.participant
+        else { return }
+
+        message.status = .sending
+        store.updateStatus(.sending, messageID: messageID, in: conversationID)
+
+        // Captures the store, not self, so the status still updates after leaving the chat.
+        service.send(message, to: recipient) { [store, conversationID] result in
+            switch result {
+            case .success:
+                store.updateStatus(.sent, messageID: messageID, in: conversationID)
+            case .failure:
+                store.updateStatus(.failed, messageID: messageID, in: conversationID)
+            }
+        }
+    }
+
+    func delete(messageID: UUID) {
+        guard failedMessage(withID: messageID) != nil else { return }
+        store.deleteMessage(messageID, in: conversationID)
+    }
+
+    private func failedMessage(withID messageID: UUID) -> Message? {
+        messages.first { $0.id == messageID && $0.status == .failed }
     }
 
     // MARK: Events
