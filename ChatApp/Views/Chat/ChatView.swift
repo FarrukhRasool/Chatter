@@ -2,6 +2,7 @@ import SwiftUI
 
 struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
+    @State private var failedMessageID: UUID?
 
     private static let typingIndicatorID = "typing-indicator"
 
@@ -29,10 +30,18 @@ struct ChatView: View {
                                 DateSeparatorView(date: message.sentAt)
                             }
 
-                            MessageBubble(
+                            let bubble = MessageBubble(
                                 message: message,
                                 isLastInGroup: MessageGrouping.isLastInGroup(in: messages, at: index)
                             )
+
+                            if message.status == .failed {
+                                Button { failedMessageID = message.id } label: { bubble }
+                                    .buttonStyle(.plain)
+                                    .accessibilityHint("Shows options to retry or delete")
+                            } else {
+                                bubble
+                            }
                         }
                         .id(message.id)
                         .transition(
@@ -83,6 +92,18 @@ struct ChatView: View {
                     isHighlighted: viewModel.isPartnerTyping
                 )
             }
+        }
+        .alert(
+            "Not delivered",
+            isPresented: Binding(
+                get: { failedMessageID != nil },
+                set: { if !$0 { failedMessageID = nil } }
+            ),
+            presenting: failedMessageID
+        ) { messageID in
+            Button("Retry") { viewModel.retry(messageID: messageID) }
+            Button("Delete", role: .destructive) { viewModel.delete(messageID: messageID) }
+            Button("Cancel", role: .cancel) {}
         }
         .onAppear { viewModel.onAppear() }
         .onDisappear { viewModel.onDisappear() }
