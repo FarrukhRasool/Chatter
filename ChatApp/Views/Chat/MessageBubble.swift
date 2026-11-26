@@ -4,6 +4,8 @@ import UIKit
 struct MessageBubble: View {
     let message: Message
     let isLastInGroup: Bool
+    /// Briefly outlines the bubble, e.g. after opening the chat from a search result.
+    var isHighlighted = false
 
     private var isOutgoing: Bool { message.isOutgoing }
 
@@ -22,6 +24,12 @@ struct MessageBubble: View {
                     .padding(.horizontal, 14)
                     .padding(.vertical, 9)
                     .background(bubbleBackground, in: bubbleShape)
+                    .overlay {
+                        bubbleShape
+                            .stroke(Color.accentColor, lineWidth: 2)
+                            .padding(-3)
+                            .opacity(isHighlighted ? 1 : 0)
+                    }
                     .opacity(message.status == .failed ? 0.55 : 1)
                     .contextMenu {
                         Button {
@@ -42,6 +50,7 @@ struct MessageBubble: View {
         }
         .padding(.bottom, isLastInGroup ? 8 : 0)
         .animation(.easeInOut(duration: 0.2), value: message.status)
+        .animation(.easeInOut(duration: 0.3), value: isHighlighted)
     }
 
     // MARK: Pieces

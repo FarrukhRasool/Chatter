@@ -4,35 +4,54 @@ struct ConversationListView: View {
     @EnvironmentObject private var store: ChatStore
     let service: any ChatService
 
-    @State private var path: [UUID] = []
+    @State private var path: [ChatRoute] = []
     @State private var isComposing = false
     @State private var pendingConversationID: UUID?
+    @State private var query = ""
 
     var body: some View {
+        let activeQuery = ChatSearch.normalized(query)
+        let isSearching = !activeQuery.isEmpty
+        let matchingConversations = ChatSearch.conversations(in: store.sortedConversations, matching: activeQuery)
+        let matchingMessages = ChatSearch.messages(in: store.conversations, matching: activeQuery)
+
         NavigationStack(path: $path) {
             List {
-                ForEach(store.sortedConversations) { conversation in
-                    ZStack {
-                        NavigationLink(value: conversation.id) { EmptyView() }
-                            .opacity(0)
-                        ConversationRow(conversation: conversation)
-                    }
-                    .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
-                    .swipeActions(edge: .trailing, allowsFullSwipe: true) {
-                        Button(role: .destructive) {
-                            withAnimation { store.deleteConversation(conversation.id) }
-                        } label: {
-                            Label("Delete", systemImage: "trash")
+                if isSearching {
+                    ChatSearchResultsView(
+                        conversations: matchingConversations,
+                        messages: matchingMessages,
+                        query: activeQuery
+                    )
+                } else {
+                    ForEach(store.sortedConversations) { conversation in
+                        ZStack {
+                            NavigationLink(value: ChatRoute(conversationID: conversation.id)) { EmptyView() }
+                                .opacity(0)
+                            ConversationRow(conversation: conversation)
                         }
-                    }
-                    .swipeActions(edge: .leading) {
-                        readToggleButton(for: conversation)
+                        .listRowInsets(EdgeInsets(top: 6, leading: 16, bottom: 6, trailing: 16))
+                        .swipeActions(edge: .trailing, allowsFullSwipe: true) {
+                            Button(role: .destructive) {
+                                withAnimation { store.deleteConversation(conversation.id) }
+                            } label: {
+                                Label("Delete", systemImage: "trash")
+                            }
+                        }
+                        .swipeActions(edge: .leading) {
+                            readToggleButton(for: conversation)
+                        }
                     }
                 }
             }
             .listStyle(.plain)
+            .searchable(text: $query, prompt: "Search chats and messages")
             .overlay {
-                if store.conversations.isEmpty {
+                if isSearching {
+                    if matchingConversations.isEmpty && matchingMessages.isEmpty {
+                        ContentUnavailableView.search(text: activeQuery)
+                    }
+                } else if store.conversations.isEmpty {
                     ContentUnavailableView(
                         "No Chats Yet",
                         systemImage: "bubble.left.and.bubble.right",
@@ -51,8 +70,13 @@ struct ConversationListView: View {
                     .accessibilityLabel("New message")
                 }
             }
-            .navigationDestination(for: UUID.self) { conversationID in
-                ChatView(conversationID: conversationID, store: store, service: service)
+            .navigationDestination(for: ChatRoute.self) { route in
+                ChatView(
+                    conversationID: route.conversationID,
+                    focusedMessageID: route.focusedMessageID,
+                    store: store,
+                    service: service
+                )
             }
             .sheet(isPresented: $isComposing, onDismiss: openPendingConversation) {
                 NewChatSheet(contacts: store.contacts) { contact in
@@ -84,7 +108,7 @@ struct ConversationListView: View {
     private func openPendingConversation() {
         guard let conversationID = pendingConversationID else { return }
         pendingConversationID = nil
-        path.append(conversationID)
+        path.append(ChatRoute(conversationID: conversationID))
     }
 }
 
