@@ -2,10 +2,16 @@ import SwiftUI
 
 struct ChatView: View {
     @StateObject private var viewModel: ChatViewModel
+    @State private var highlightedMessageID: UUID?
+    @State private var didFocus = false
+
+    /// A message to scroll to and briefly highlight when the chat opens (e.g. from search).
+    private let focusedMessageID: UUID?
 
     private static let typingIndicatorID = "typing-indicator"
 
-    init(conversationID: UUID, store: ChatStore, service: any ChatService) {
+    init(conversationID: UUID, focusedMessageID: UUID? = nil, store: ChatStore, service: any ChatService) {
+        self.focusedMessageID = focusedMessageID
         _viewModel = StateObject(
             wrappedValue: ChatViewModel(conversationID: conversationID,
                                         store: store,
@@ -31,7 +37,8 @@ struct ChatView: View {
 
                             MessageBubble(
                                 message: message,
-                                isLastInGroup: MessageGrouping.isLastInGroup(in: messages, at: index)
+                                isLastInGroup: MessageGrouping.isLastInGroup(in: messages, at: index),
+                                isHighlighted: message.id == highlightedMessageID
                             )
                         }
                         .id(message.id)
@@ -66,6 +73,9 @@ struct ChatView: View {
             .onChange(of: viewModel.isPartnerTyping) {
                 scrollToBottom(proxy)
             }
+            .task {
+                await focusMessageIfNeeded(proxy)
+            }
             .safeAreaInset(edge: .bottom, spacing: 0) {
                 MessageInputBar(
                     text: $viewModel.draft,
@@ -86,6 +96,24 @@ struct ChatView: View {
         }
         .onAppear { viewModel.onAppear() }
         .onDisappear { viewModel.onDisappear() }
+    }
+
+    /// Scrolls to `focusedMessageID` once per visit, highlights it, then fades the highlight out.
+    private func focusMessageIfNeeded(_ proxy: ScrollViewProxy) async {
+        guard !didFocus, let messageID = focusedMessageID,
+              viewModel.messages.contains(where: { $0.id == messageID })
+        else { return }
+        didFocus = true
+
+        // Let the lazy stack lay out its first pass before scrolling.
+        await Task.yield()
+        proxy.scrollTo(messageID, anchor: .center)
+        highlightedMessageID = messageID
+
+        try? await Task.sleep(for: .seconds(1.5))
+        withAnimation(.easeOut(duration: 0.4)) {
+            highlightedMessageID = nil
+        }
     }
 
     private func scrollToBottom(_ proxy: ScrollViewProxy) {
